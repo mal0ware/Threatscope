@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+*.egg
+
+# Environment
+.env
+.env.local
+
+# SQLite
+*.db
+*.sqlite
+*.sqlite3
+
+# Node
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# Tauri
+src-tauri/target/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor / tool config
+.claude/
+
+# Local-only docs — internal AI-agent reference, never pushed to public repo
+PROJECT_DETAILS.md
+prd-threatscope.md
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+
+# ML models (trained)
+ml/models/*.pkl
+ml/models/*.joblib
+
+# Logs
+*.log
+
+# PyInstaller
+*.spec

@@ -1,0 +1,25 @@
+[project]
+name = "threatscope"
+version = "0.1.0"
+description = "Real-time network threat intelligence dashboard"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "S"]
+ignore = ["S101", "S311"]  # assert in tests; random is fine for demo data
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+warn_unused_ignores = false

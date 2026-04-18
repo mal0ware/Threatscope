@@ -1,0 +1,99 @@
+name: Bug report
+description: Something is broken or behaves incorrectly
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report. The more detail you give, the faster it gets fixed.
+
+        **Security issues**: do not file here. See [SECURITY.md](https://github.com/mal0ware/Threatscope/blob/main/SECURITY.md) for the private disclosure process.
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: How are you running ThreatScope?
+      options:
+        - Desktop app — macOS .dmg
+        - Desktop app — Windows .msi / .exe
+        - Desktop app — Linux .AppImage / .deb
+        - Local dev (npm run dev + uvicorn)
+        - Server-only (FastAPI behind reverse proxy)
+        - Tauri dev (`npm run tauri dev`)
+        - Other (describe below)
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      description: Tag from About panel (e.g. `v0.1.0`) or `git rev-parse --short HEAD`.
+      placeholder: "v0.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      placeholder: "macOS 14.4 / Python 3.13 / Node 22.x / Rust 1.83"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Clear description. What did you expect, what did you see?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Numbered list of steps that reliably triggers the bug.
+      placeholder: |
+        1. Start the API with `python3 -m api.main --demo`
+        2. Open the dashboard
+        3. Click "Acknowledge" on alert X
+        4. Observe ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - Log collector / parsers
+        - Event bus
+        - ML detectors (login / network / DNS)
+        - Rule engine
+        - Threat narrator
+        - REST API
+        - WebSocket / SSE streaming
+        - SQLite / FTS5
+        - Dashboard UI
+        - Tauri desktop shell
+        - CI / build / release
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / stack traces
+      description: Backend stderr, browser DevTools console, or relevant log lines. Strip any real customer data.
+      render: shell
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Screenshots, suspected cause, workarounds you've tried, sample log fixture (sanitized).
