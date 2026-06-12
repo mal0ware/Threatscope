@@ -113,7 +113,7 @@ Rules use sliding time windows with per-key grouping (source IP, username) and a
 | **Visualization** | Recharts, D3.js (force layout) | Recharts for time-series/bar charts, D3 for the interactive network topology graph |
 | **Desktop** | Tauri 2.x (Rust) | ~10MB binary vs Electron's ~150MB, native system tray and notifications |
 | **CI/CD** | GitHub Actions | Python 3.11/3.12/3.13 matrix, frontend type-check + build, cross-platform Tauri releases |
-| **Quality** | ruff, mypy (strict), pytest, ESLint | Lint + type-check enforced in CI; 77 tests across unit, integration, and security suites |
+| **Quality** | ruff, mypy (strict), pytest, ESLint | Lint + type-check enforced in CI; 77 tests across unit and integration suites |
 
 ---
 
@@ -246,12 +246,13 @@ This is a security tool — its own attack surface is hardened accordingly.
 | **SQL Injection** | All database queries use parameterized placeholders. Zero string interpolation in SQL. |
 | **Input Validation** | Regex-validated event IDs, allowlisted enum values for severity/source/sort, `Query` constraints on all parameters. |
 | **XSS** | React's JSX escaping by default. Raw log content rendered as text, never `dangerouslySetInnerHTML`. |
-| **Rate Limiting** | Configurable per-IP rate limits. WebSocket hard-capped at 50 concurrent connections. |
+| **Connection Limits** | WebSocket connections hard-capped at 50 concurrent. |
 | **CORS** | Restricted to configured dashboard origin. No wildcard origins in production. |
-| **Auth** | JWT-based with session expiry and scoped tokens. |
 | **Resource Exhaustion** | Bounded event bus ring buffer (10K). Slow WebSocket consumers are dropped, not buffered indefinitely. |
 | **File Access** | Log tailer only reads explicitly registered paths. No user-controlled file reads. |
 | **Static Analysis** | ruff `S` rules (Bandit) enabled in CI — catches hardcoded secrets, insecure function usage, and common vulnerability patterns. |
+
+**Known limitations:** API authentication and per-IP request rate limiting are planned but not yet implemented. The server binds to `127.0.0.1` by default; deployments exposing the API beyond localhost should place it behind a reverse proxy that provides authentication and rate limiting.
 
 ---
 
@@ -276,7 +277,6 @@ threatscope/
 │   │   ├── stats.py          # Overview stats and heatmap
 │   │   ├── anomalies.py      # Anomaly listing and threat narratives
 │   │   └── websocket.py      # WebSocket push with keepalive
-│   ├── middleware/            # Auth, rate limiting
 │   └── models/
 │       └── database.py       # SQLite manager (WAL, FTS5, CHECK constraints)
 ├── ml/                       # Detection pipeline
@@ -302,8 +302,7 @@ threatscope/
 │   └── generate_demo_data.py # Synthetic event seeder (brute force, port scan, baseline)
 ├── tests/
 │   ├── unit/                 # Parser, ML model, rule engine, event bus tests
-│   ├── integration/          # API endpoint and file tailer tests
-│   └── security/             # Security-focused test cases
+│   └── integration/          # API endpoint and file tailer tests
 ├── .github/workflows/
 │   ├── ci.yml                # Lint + type-check + test (Python 3.11-3.13 matrix)
 │   └── release.yml           # Cross-platform Tauri desktop builds on tag push

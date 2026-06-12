@@ -5,13 +5,13 @@ setup:
 	cd frontend && npm install
 
 dev:
-	python api/main.py & cd frontend && npm run dev
+	python -m api.main & cd frontend && npm run dev
 
 test:
-	pytest && cd frontend && npm run test
+	pytest
 
 demo:
-	python api/main.py --demo
+	python -m api.main --demo
 
 desktop:
 	cd frontend && npm run tauri dev
