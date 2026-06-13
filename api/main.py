@@ -14,6 +14,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from agent.config import Settings, get_settings
 from agent.event_bus import EventBus
+from api.middleware.auth import JWTAuthMiddleware
+from api.middleware.ratelimit import RateLimitMiddleware
 from api.models.database import DatabaseManager
 from api.routes import alerts, anomalies, events, stats, websocket
 from ml.pipeline import DetectionPipeline
@@ -77,6 +79,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
 
+    # Middleware runs in reverse order of registration (last added is
+    # outermost). We want: rate limit -> auth -> CORS -> routes, so that
+    # abusive traffic is shed before signature verification, and CORS headers
+    # are applied to auth/rate-limit responses too.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -84,6 +90,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["GET", "POST"],
         allow_headers=["Authorization", "Content-Type"],
     )
+    # Auth is config-gated inside the middleware: a no-op unless jwt_secret set.
+    app.add_middleware(JWTAuthMiddleware, settings=settings)
+    # Rate limiting is active whenever rate_limit_per_minute > 0.
+    app.add_middleware(RateLimitMiddleware, settings=settings)
 
     # Register route modules
     app.include_router(events.router)

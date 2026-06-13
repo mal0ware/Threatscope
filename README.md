@@ -113,7 +113,7 @@ Rules use sliding time windows with per-key grouping (source IP, username) and a
 | **Visualization** | Recharts, D3.js (force layout) | Recharts for time-series/bar charts, D3 for the interactive network topology graph |
 | **Desktop** | Tauri 2.x (Rust) | ~10MB binary vs Electron's ~150MB, native system tray and notifications |
 | **CI/CD** | GitHub Actions | Python 3.11/3.12/3.13 matrix, frontend type-check + build, cross-platform Tauri releases |
-| **Quality** | ruff, mypy (strict), pytest, ESLint | Lint + type-check enforced in CI; 77 tests across unit and integration suites |
+| **Quality** | ruff, mypy (strict), pytest, ESLint | Lint + type-check enforced in CI; 111 tests across unit, integration, and security suites |
 
 ---
 
@@ -215,6 +215,7 @@ pytest tests/ -v
 # Run by category
 pytest tests/unit/ -v          # 64 unit tests
 pytest tests/integration/ -v   # 13 integration tests
+pytest tests/security/ -v      # 34 security tests
 
 # Linting and type checking
 ruff check .
@@ -226,7 +227,7 @@ npx tsc --noEmit    # type check
 npm run build       # production build
 ```
 
-**77 tests** covering:
+**111 tests** covering:
 - Parser correctness (auth log, syslog, edge cases, immutability)
 - Event bus pub-sub (subscribe, unsubscribe, ring buffer eviction, slow consumers)
 - ML models (Isolation Forest training/scoring, DNS feature extraction, Z-score flagging)
@@ -234,6 +235,7 @@ npm run build       # production build
 - Threat narrator (template rendering, fallback behavior)
 - API integration (search, filtering, pagination, error handling, stats)
 - File tailer (event publishing, existing content skip, missing source handling)
+- Security (JWT verification, scope enforcement, rate-limit 429s, WebSocket-handshake auth, auth-disabled passthrough)
 
 ---
 
@@ -246,13 +248,42 @@ This is a security tool — its own attack surface is hardened accordingly.
 | **SQL Injection** | All database queries use parameterized placeholders. Zero string interpolation in SQL. |
 | **Input Validation** | Regex-validated event IDs, allowlisted enum values for severity/source/sort, `Query` constraints on all parameters. |
 | **XSS** | React's JSX escaping by default. Raw log content rendered as text, never `dangerouslySetInnerHTML`. |
+| **Authentication** | Optional HS256 JWT bearer-token auth (`api/middleware/auth.py`). Tokens carry a `read` or `admin` scope and an expiry. Read-only routes require `read`; mutating/config routes require `admin`. Config-gated — see below. |
+| **Rate Limiting** | Per-IP fixed-window limiter honoring `rate_limit_per_minute` (`api/middleware/ratelimit.py`). Over-budget requests get `429 Too Many Requests` with a `Retry-After` header. |
 | **Connection Limits** | WebSocket connections hard-capped at 50 concurrent. |
 | **CORS** | Restricted to configured dashboard origin. No wildcard origins in production. |
 | **Resource Exhaustion** | Bounded event bus ring buffer (10K). Slow WebSocket consumers are dropped, not buffered indefinitely. |
 | **File Access** | Log tailer only reads explicitly registered paths. No user-controlled file reads. |
 | **Static Analysis** | ruff `S` rules (Bandit) enabled in CI — catches hardcoded secrets, insecure function usage, and common vulnerability patterns. |
 
-**Known limitations:** API authentication and per-IP request rate limiting are planned but not yet implemented. The server binds to `127.0.0.1` by default; deployments exposing the API beyond localhost should place it behind a reverse proxy that provides authentication and rate limiting.
+### Authentication
+
+JWT authentication is **config-gated**: it activates only when a non-empty `THREATSCOPE_JWT_SECRET` is set. With no secret configured (the default), the API serves the local demo and dashboard without tokens — so `python -m api.main --demo` and local development need no setup. When a secret *is* present, every request to a protected route must carry a valid token.
+
+```bash
+# Enable auth by setting a strong secret (32+ bytes recommended).
+export THREATSCOPE_JWT_SECRET="$(openssl rand -hex 32)"
+
+# Issue a token. Read scope for dashboards/consumers, admin for write access.
+python -m api.issue_token --scope read
+python -m api.issue_token --scope admin --expiry-minutes 1440
+
+# Call the API with the token.
+curl -H "Authorization: Bearer <token>" http://127.0.0.1:8000/api/v1/stats/overview
+```
+
+| Scope | Grants access to |
+|-------|------------------|
+| `read` | `GET` routes — search, stats, anomalies, alert listing, SSE/WS streams |
+| `admin` | Everything `read` allows **plus** mutating routes (e.g. `POST /api/v1/alerts/{id}/acknowledge`) |
+
+Scope is enforced by HTTP method: read methods (`GET`/`HEAD`) require `read`; mutating methods (`POST`/`PUT`/`PATCH`/`DELETE`) require `admin`. Missing or malformed tokens return `401` with a `WWW-Authenticate: Bearer` header; valid-but-under-scoped tokens return `403`. The `/health` probe is always public. WebSocket (`/ws/events`) and SSE (`/api/v1/events/stream`) clients that cannot set an `Authorization` header may pass the token as a `?token=` query parameter.
+
+### Rate Limiting
+
+A per-IP fixed-window limiter caps each client to `THREATSCOPE_RATE_LIMIT` requests per 60-second window (default 60). Exceeding the budget returns `429 Too Many Requests` with a `Retry-After` header. Set `THREATSCOPE_RATE_LIMIT=0` to disable. Counters are in-process — this is a single-node limiter; horizontally scaled deployments should add a shared store or front the API with a proxy-level limiter.
+
+**Deployment note:** the server binds to `127.0.0.1` by default. Exposing the API beyond localhost should be done with `THREATSCOPE_JWT_SECRET` set and, ideally, behind a TLS-terminating reverse proxy.
 
 ---
 
@@ -276,7 +307,11 @@ threatscope/
 │   │   ├── alerts.py         # Alert listing and acknowledgment
 │   │   ├── stats.py          # Overview stats and heatmap
 │   │   ├── anomalies.py      # Anomaly listing and threat narratives
-│   │   └── websocket.py      # WebSocket push with keepalive
+│   │   └── websocket.py      # WebSocket push with keepalive (auth-gated)
+│   ├── middleware/
+│   │   ├── auth.py           # JWT bearer auth, scope enforcement (config-gated)
+│   │   └── ratelimit.py      # Per-IP fixed-window rate limiter
+│   ├── issue_token.py        # CLI to mint scoped JWTs
 │   └── models/
 │       └── database.py       # SQLite manager (WAL, FTS5, CHECK constraints)
 ├── ml/                       # Detection pipeline
@@ -302,7 +337,8 @@ threatscope/
 │   └── generate_demo_data.py # Synthetic event seeder (brute force, port scan, baseline)
 ├── tests/
 │   ├── unit/                 # Parser, ML model, rule engine, event bus tests
-│   └── integration/          # API endpoint and file tailer tests
+│   ├── integration/          # API endpoint and file tailer tests
+│   └── security/             # Auth, scope, rate-limit, WebSocket-auth tests
 ├── .github/workflows/
 │   ├── ci.yml                # Lint + type-check + test (Python 3.11-3.13 matrix)
 │   └── release.yml           # Cross-platform Tauri desktop builds on tag push

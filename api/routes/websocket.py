@@ -9,6 +9,8 @@ import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from api.middleware.auth import AuthError, authenticate_websocket
+
 __all__ = ["router"]
 
 logger = logging.getLogger(__name__)
@@ -22,6 +24,16 @@ _active_connections: set[str] = set()
 @router.websocket("/ws/events")
 async def websocket_events(websocket: WebSocket) -> None:
     """Push real-time events to connected dashboard clients."""
+    settings = websocket.app.state.settings
+    # Auth is config-gated: only enforced when a jwt_secret is configured.
+    if settings.jwt_secret:
+        try:
+            authenticate_websocket(websocket, settings)
+        except AuthError:
+            # 1008 = policy violation. Reject before the accept handshake.
+            await websocket.close(code=1008, reason="Unauthorized")
+            return
+
     if len(_active_connections) >= _MAX_WS_CONNECTIONS:
         await websocket.close(code=1013, reason="Too many connections")
         return
