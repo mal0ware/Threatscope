@@ -5,6 +5,8 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6.svg)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
+**Status:** v0.1.0 pre-release — working single-node mini-SIEM (ingestion, detection, dashboard, optional JWT auth, per-IP rate limiting) with 111 passing tests; local-first by design and not yet hardened for multi-node or internet-facing deployment.
+
 Real-time threat intelligence platform that ingests system logs, runs ML-based anomaly detection and deterministic rule evaluation, and surfaces security events through a live dashboard with WebSocket push.
 
 Built to solve the visibility gap for environments that need more than raw log files but can't justify enterprise SIEM pricing. Runs entirely offline with zero external dependencies or API keys required.
