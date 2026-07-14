@@ -10,14 +10,17 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from typing import TYPE_CHECKING
 
 from agent.event_bus import EventBus
 from agent.parsers.base import NormalizedEvent
-from api.models.database import DatabaseManager
 from ml.models.dns_classifier import DNSClassifier, DNSLabel
 from ml.models.login_anomaly import LoginAnomalyDetector, extract_login_features
 from ml.models.network_anomaly import NetworkAnomalyDetector
 from ml.rules.engine import RuleEngine
+
+if TYPE_CHECKING:
+    from api.models.database import DatabaseManager
 
 __all__ = ["DetectionPipeline"]
 
