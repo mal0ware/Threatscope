@@ -5,11 +5,21 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6.svg)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-**Status:** v0.1.0 pre-release — working single-node mini-SIEM (ingestion, detection, dashboard, optional JWT auth, per-IP rate limiting) with 140 passing tests; local-first by design and not yet hardened for multi-node or internet-facing deployment.
+**Status:** v0.1.0 — working single-node mini-SIEM (ingestion, detection, dashboard, optional JWT auth, per-IP rate limiting) with 141 passing tests; local-first by design and not yet hardened for multi-node or internet-facing deployment.
 
 Real-time threat intelligence platform that ingests system logs, runs ML-based anomaly detection and deterministic rule evaluation, and surfaces security events through a live dashboard with WebSocket push.
 
 Built to solve the visibility gap for environments that need more than raw log files but can't justify enterprise SIEM pricing. Runs entirely offline with zero external dependencies or API keys required.
+
+## Screenshots
+
+Captured from a live run in demo mode (`make demo`) with real log lines tailed in — the alerts below were raised by the rule engine and DNS classifier, not seeded.
+
+![Dashboard overview: stats cards, threat timeline, event heatmap, and network map](docs/screenshots/dashboard-overview.png)
+
+![Live event feed streaming tailed dnsmasq and auth.log events over WebSocket](docs/screenshots/live-event-feed.png)
+
+![Active alerts (SSH brute force, DNS tunneling, DGA) with top source IPs](docs/screenshots/alerts-top-sources.png)
 
 ---
 
@@ -116,7 +126,7 @@ Rules use sliding time windows with per-key grouping (source IP, username) and a
 | **Visualization** | Recharts, D3.js (force layout) | Recharts for time-series/bar charts, D3 for the interactive network topology graph |
 | **Desktop** | Tauri 2.x (Rust) | ~10MB binary vs Electron's ~150MB, native system tray and notifications |
 | **CI/CD** | GitHub Actions | Python 3.11/3.12/3.13 matrix, frontend type-check + build, cross-platform Tauri releases |
-| **Quality** | ruff, mypy (strict), pytest, ESLint | Lint + type-check enforced in CI; 140 tests across unit, integration, and security suites |
+| **Quality** | ruff, mypy (strict), pytest, ESLint | Lint + type-check enforced in CI; 141 tests across unit, integration, and security suites |
 
 ---
 
@@ -245,7 +255,7 @@ pytest tests/ -v
 
 # Run by category
 pytest tests/unit/ -v          # 87 unit tests
-pytest tests/integration/ -v   # 19 integration tests
+pytest tests/integration/ -v   # 20 integration tests
 pytest tests/security/ -v      # 34 security tests
 
 # Linting and type checking

@@ -3,9 +3,14 @@
 All notable changes to Threatscope are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follows [SemVer](https://semver.org/).
 
-## [Unreleased] — v0.1.0 pre-release line
+## [0.1.0] — 2026-07-19
+
+First tagged release: single-node mini-SIEM with live ingestion,
+detection, and dashboard, verified end to end in demo mode.
 
 ### Added
+- Dashboard screenshots from a live demo-mode run, embedded in the README
+  (`docs/screenshots/`).
 - Real-time log ingestion with a bounded pub/sub bus, ML anomaly detection
   (Isolation Forest + DNS exfiltration classifier), and deterministic rule
   evaluation.
@@ -35,10 +40,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); versioning follo
   statements that a 3.11 target refuses to parse).
 - Pruned unused dependencies from `requirements.txt` (sqlalchemy,
   aiosqlite, pandas, aiofiles) — none were imported anywhere.
-- Test suite grew from 111 to 140 tests (DNS parser, parser routing,
-  persistence, full-text search, demo replay contracts, config).
+- Test suite grew from 111 to 141 tests (DNS parser, parser routing,
+  persistence, full-text search, demo replay contracts, config, stats
+  time-window regression).
 
 ### Fixed
+- Dashboard stats time windows (`events_last_hour`, 7-day heatmap) were
+  computed with SQLite's `datetime('now')`, which is UTC and
+  space-separated — comparing it against the stored naive-local ISO
+  'T'-format timestamps both undercounted on non-UTC hosts and
+  string-compared wrongly. Cutoffs are now built in Python in the same
+  format as the stored timestamps.
 - Full-text search: the fts5 external-content index was never populated
   (no sync triggers), so every `q=` search silently returned nothing.
   Added insert/update/delete triggers plus a guarded rebuild for
