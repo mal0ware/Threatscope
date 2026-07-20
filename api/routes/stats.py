@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 from fastapi import APIRouter, Request
 
 __all__ = ["router"]
@@ -17,8 +19,15 @@ async def overview(request: Request) -> dict[str, object]:
     with db.connect() as conn:
         total_events = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
 
+        # Event timestamps are naive local time in ISO 'T' format (syslog
+        # lines carry no zone; parsers and the demo seeder use local time).
+        # Build the cutoff in Python with the same format: SQLite's
+        # datetime('now') is UTC *and* space-separated, so comparing it
+        # against 'T'-separated strings miscounts twice over.
+        one_hour_ago = (datetime.now() - timedelta(hours=1)).isoformat()
         events_1h = conn.execute(
-            "SELECT COUNT(*) FROM events WHERE timestamp >= datetime('now', '-1 hour')"
+            "SELECT COUNT(*) FROM events WHERE timestamp >= ?",
+            (one_hour_ago,),
         ).fetchone()[0]
 
         severity_counts = conn.execute(
@@ -60,6 +69,7 @@ async def heatmap(request: Request) -> dict[str, object]:
     """Hourly event heatmap data (24h x 7d grid)."""
     db = request.app.state.db
 
+    seven_days_ago = (datetime.now() - timedelta(days=7)).isoformat()
     with db.connect() as conn:
         rows = conn.execute(
             "SELECT "
@@ -67,9 +77,10 @@ async def heatmap(request: Request) -> dict[str, object]:
             "  CAST(strftime('%H', timestamp) AS INTEGER) AS hour, "
             "  COUNT(*) AS count "
             "FROM events "
-            "WHERE timestamp >= datetime('now', '-7 days') "
+            "WHERE timestamp >= ? "
             "GROUP BY day_of_week, hour "
-            "ORDER BY day_of_week, hour"
+            "ORDER BY day_of_week, hour",
+            (seven_days_ago,),
         ).fetchall()
 
     return {

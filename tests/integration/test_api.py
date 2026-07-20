@@ -175,6 +175,40 @@ async def test_stats_overview(client):
 
 
 @pytest.mark.asyncio
+async def test_stats_overview_last_hour_window(client, app):
+    """Event timestamps are naive local time in ISO 'T' format, so the
+    last-hour cutoff must match both the zone and the format: SQLite's
+    datetime('now') is UTC and space-separated, which undercounts on
+    non-UTC hosts and string-compares wrongly against 'T' timestamps."""
+    from datetime import datetime, timedelta
+
+    now = datetime.now()
+    db = app.state.db
+    with db.connect() as conn:
+        for ts in (now, now - timedelta(hours=3)):
+            conn.execute(
+                "INSERT INTO events (timestamp, source, event_type, severity, "
+                "source_ip, raw_message, metadata) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    ts.isoformat(),
+                    "auth",
+                    "ssh_failed",
+                    "medium",
+                    "10.0.0.1",
+                    "Failed password for admin",
+                    json.dumps({}),
+                ),
+            )
+
+    resp = await client.get("/api/v1/stats/overview")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total_events"] == 2
+    assert data["events_last_hour"] == 1  # the 3-hour-old event is excluded
+
+
+@pytest.mark.asyncio
 async def test_stats_heatmap(client):
     resp = await client.get("/api/v1/stats/heatmap")
     assert resp.status_code == 200
