@@ -5,7 +5,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6.svg)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-**Status:** v0.1.0 pre-release — working single-node mini-SIEM (ingestion, detection, dashboard, optional JWT auth, per-IP rate limiting) with 111 passing tests; local-first by design and not yet hardened for multi-node or internet-facing deployment.
+**Status:** v0.1.0 pre-release — working single-node mini-SIEM (ingestion, detection, dashboard, optional JWT auth, per-IP rate limiting) with 140 passing tests; local-first by design and not yet hardened for multi-node or internet-facing deployment.
 
 Real-time threat intelligence platform that ingests system logs, runs ML-based anomaly detection and deterministic rule evaluation, and surfaces security events through a live dashboard with WebSocket push.
 
@@ -34,14 +34,15 @@ Built to solve the visibility gap for environments that need more than raw log f
 
 ```
                         ┌──────────────────────────┐
-                        │      Data Sources         │
-                        │  auth.log  syslog  DNS    │
+                        │       Data Sources        │
+                        │ auth.log syslog dnsmasq   │
                         └────────────┬─────────────┘
                                      │
                     ┌────────────────▼────────────────┐
                     │       Log Collection Agent       │
                     │  Watchdog file tailer with       │
-                    │  inode-aware rotation handling   │
+                    │  inode-aware rotation handling,  │
+                    │  per-file parser routing         │
                     └────────────────┬────────────────┘
                                      │ NormalizedEvent
                     ┌────────────────▼────────────────┐
@@ -52,12 +53,12 @@ Built to solve the visibility gap for environments that need more than raw log f
                        │             │              │
               ┌────────▼──┐  ┌──────▼──────┐  ┌───▼────────┐
               │ Rule Engine│  │ ML Pipeline │  │ Subscribers│
-              │ Sliding    │  │ Login IF    │  │ SSE / WS   │
-              │ windows,   │  │ Network Z+IF│  │ clients    │
-              │ thresholds │  │ DNS RF+heur │  │            │
-              └────────┬───┘  └──────┬──────┘  └────────────┘
-                       │             │
-                       ▼             ▼
+              │ Sliding    │  │ Login IF    │  │ Persister, │
+              │ windows,   │  │ Network Z+IF│  │ SSE / WS   │
+              │ thresholds │  │ DNS RF+heur │  │ clients    │
+              └────────┬───┘  └──────┬──────┘  └───┬────────┘
+                       │             │             │
+                       ▼             ▼             ▼
               ┌──────────────────────────────────────┐
               │         SQLite + FTS5 (WAL)          │
               │  Events  Alerts  Rules  Full-text    │
@@ -76,7 +77,7 @@ Built to solve the visibility gap for environments that need more than raw log f
               └──────────────────────────────────────┘
 ```
 
-**Data flow:** Log files are tailed in real time by a watchdog-based collector that detects log rotation via inode tracking. Each line is routed to the appropriate parser (auth, syslog) which emits a `NormalizedEvent` frozen dataclass. Events are published to an in-memory async event bus backed by a bounded ring buffer. Downstream subscribers (ML pipeline, rule engine, WebSocket/SSE clients) consume events concurrently. Detections generate alerts persisted to SQLite. The FastAPI layer exposes REST endpoints with full-text search (FTS5) and real-time push via WebSocket.
+**Data flow:** Log files are tailed in real time by a watchdog-based collector that detects log rotation via inode tracking. Each file is routed to the appropriate parser by name (auth, dns, syslog fallback), which emits a `NormalizedEvent` frozen dataclass. Events are published to an in-memory async event bus backed by a bounded ring buffer. Downstream subscribers consume events concurrently: the ML pipeline and rule engine run detections, the event persister batch-writes every event to SQLite (keeping the FTS5 index in sync via triggers), and WebSocket/SSE clients receive live pushes. Detections generate alerts persisted alongside the events. The FastAPI layer exposes REST endpoints with full-text search (FTS5) and real-time push via WebSocket.
 
 ---
 
@@ -88,7 +89,7 @@ Built to solve the visibility gap for environments that need more than raw log f
 |----------|-------|-------------|
 | **Login Anomaly** | Isolation Forest | Extracts temporal and behavioral features from auth events (hour-of-day, day-of-week, IP frequency, success/failure ratio). Trains on a rolling 30-day baseline. Anomaly scores normalized to `[0.0, 1.0]`. |
 | **Network Traffic** | Z-score + Isolation Forest | Maintains a rolling baseline of traffic snapshots (bytes in/out, packet counts, unique IPs, port entropy). Per-feature Z-scores flag individual spikes; Isolation Forest catches multi-dimensional anomalies the Z-scores miss. |
-| **DNS Classification** | Random Forest + Heuristics | Feature vector includes Shannon entropy, label length, digit ratio, consonant ratio, hex pattern density, and dot count. Classifies queries as `NORMAL`, `TUNNELING`, or `DGA`. Heuristic fallback ensures detection works without training data. |
+| **DNS Classification** | Random Forest + Heuristics | Feature vector includes Shannon entropy, label length, digit ratio, consonant ratio, hex pattern density, and dot count. Classifies queries as `NORMAL`, `TUNNELING`, or `DGA`. Heuristic fallback ensures detection works without training data. Fed by the dnsmasq query-log parser (see [Ingesting Real Logs](#ingesting-real-logs)). |
 
 ### Rule-Based Detectors
 
@@ -115,7 +116,7 @@ Rules use sliding time windows with per-key grouping (source IP, username) and a
 | **Visualization** | Recharts, D3.js (force layout) | Recharts for time-series/bar charts, D3 for the interactive network topology graph |
 | **Desktop** | Tauri 2.x (Rust) | ~10MB binary vs Electron's ~150MB, native system tray and notifications |
 | **CI/CD** | GitHub Actions | Python 3.11/3.12/3.13 matrix, frontend type-check + build, cross-platform Tauri releases |
-| **Quality** | ruff, mypy (strict), pytest, ESLint | Lint + type-check enforced in CI; 111 tests across unit, integration, and security suites |
+| **Quality** | ruff, mypy (strict), pytest, ESLint | Lint + type-check enforced in CI; 140 tests across unit, integration, and security suites |
 
 ---
 
@@ -143,7 +144,7 @@ pip install -r requirements.txt
 python3 -m api.main --demo
 ```
 
-The `--demo` flag seeds ~400 synthetic events on startup (brute force attacks, port scans, DNS queries, baseline traffic) so the dashboard has data to display immediately.
+The `--demo` flag seeds ~450 synthetic events on startup (brute force attacks, port scans, DNS queries, baseline traffic) and replays a live attack burst through the event bus, so the dashboard has data — and the detectors have fired real alerts — immediately.
 
 ### Frontend
 
@@ -169,6 +170,34 @@ python3 -m api.main [OPTIONS]
   --host     Bind address (default: 127.0.0.1)
   --port     Bind port (default: 8000)
 ```
+
+### Ingesting Real Logs
+
+The server tails these files by default, skipping any that don't exist:
+
+| Path | Parser | Events produced |
+|------|--------|-----------------|
+| `/var/log/auth.log` | Auth | `ssh_failed`, `ssh_success`, `ssh_invalid_user`, `sudo_command`, `ssh_brute_force` |
+| `/var/log/syslog` | Syslog | `syslog_<process>` with keyword-inferred severity |
+| `/var/log/dnsmasq.log` | DNS | `dns_query` with domain, record type, and client IP |
+
+Override the list with a comma-separated `THREATSCOPE_LOG_SOURCES`. Files are routed to a parser by name: `auth`/`secure` → auth parser, `dns` → dnsmasq parser, anything else → syslog parser.
+
+```bash
+export THREATSCOPE_LOG_SOURCES="/var/log/secure,/var/log/dnsmasq.log"
+python3 -m api.main
+```
+
+**DNS source setup:** the DNS parser reads dnsmasq query logs — the sensible default for home-lab and small-office resolvers (also the resolver inside Pi-hole). Enable query logging in `/etc/dnsmasq.conf`:
+
+```
+log-queries
+log-facility=/var/log/dnsmasq.log
+```
+
+Both dnsmasq line shapes are handled — syslog-routed (`Apr  9 14:22:01 gateway dnsmasq[817]: query[A] example.com from 192.168.1.50`) and direct `log-facility` files (no hostname field). Only client-attributed `query[...]` lines become events; `forwarded`/`reply`/`cached` chatter is ignored. Queries for tunnel-capable record types (`TXT`, `NULL`, `ANY`) are ingested at `low` severity instead of `info`, and every query's domain flows through the DNS tunneling/DGA classifier.
+
+Note: reading files under `/var/log` may require running the server with elevated privileges or adding your user to the appropriate group (e.g. `adm` on Debian/Ubuntu).
 
 ### Dashboard Widgets
 
@@ -215,8 +244,8 @@ When `--debug` is enabled, interactive API docs are available at `/docs`.
 pytest tests/ -v
 
 # Run by category
-pytest tests/unit/ -v          # 64 unit tests
-pytest tests/integration/ -v   # 13 integration tests
+pytest tests/unit/ -v          # 87 unit tests
+pytest tests/integration/ -v   # 19 integration tests
 pytest tests/security/ -v      # 34 security tests
 
 # Linting and type checking
@@ -229,14 +258,17 @@ npx tsc --noEmit    # type check
 npm run build       # production build
 ```
 
-**111 tests** covering:
-- Parser correctness (auth log, syslog, edge cases, immutability)
+**140 tests** covering:
+- Parser correctness (auth log, syslog, dnsmasq DNS queries, parser routing, edge cases, immutability)
 - Event bus pub-sub (subscribe, unsubscribe, ring buffer eviction, slow consumers)
+- Event persistence (bus-to-SQLite writes, FTS indexing of persisted rows, bad-event isolation)
 - ML models (Isolation Forest training/scoring, DNS feature extraction, Z-score flagging)
 - Rule engine (threshold triggers, per-key grouping, window resets, alert generation)
 - Threat narrator (template rendering, fallback behavior)
-- API integration (search, filtering, pagination, error handling, stats)
+- API integration (search, filtering, full-text search, malformed-query 400s, pagination, error handling, stats)
 - File tailer (event publishing, existing content skip, missing source handling)
+- Demo data (replayed events satisfy detector and schema contracts)
+- Config (log source defaults and env overrides)
 - Security (JWT verification, scope enforcement, rate-limit 429s, WebSocket-handshake auth, auth-disabled passthrough)
 
 ---
@@ -301,6 +333,7 @@ threatscope/
 │   └── parsers/
 │       ├── base.py           # NormalizedEvent schema, LogParser ABC
 │       ├── auth.py           # SSH auth log parser (failed/success/brute/sudo)
+│       ├── dns.py            # dnsmasq query-log parser (domain/type/client)
 │       └── syslog.py         # RFC 3164 syslog parser
 ├── api/                      # FastAPI REST API
 │   ├── main.py               # App factory, lifespan management, CLI entrypoint
@@ -315,7 +348,8 @@ threatscope/
 │   │   └── ratelimit.py      # Per-IP fixed-window rate limiter
 │   ├── issue_token.py        # CLI to mint scoped JWTs
 │   └── models/
-│       └── database.py       # SQLite manager (WAL, FTS5, CHECK constraints)
+│       ├── database.py       # SQLite manager (WAL, FTS5 + sync triggers, CHECK constraints)
+│       └── persistence.py    # Event bus -> SQLite batch persister
 ├── ml/                       # Detection pipeline
 │   ├── pipeline.py           # Orchestrator — subscribes to bus, runs all detectors
 │   ├── narrator.py           # Threat narrative generation (template + optional API)
@@ -336,7 +370,7 @@ threatscope/
 │   └── src-tauri/            # Tauri v2 desktop wrapper (Rust)
 │       └── src/main.rs       # System tray, native menu, window management
 ├── scripts/
-│   └── generate_demo_data.py # Synthetic event seeder (brute force, port scan, baseline)
+│   └── generate_demo_data.py # Synthetic event seeder + live replay burst (brute force, port scan, DNS, baseline)
 ├── tests/
 │   ├── unit/                 # Parser, ML model, rule engine, event bus tests
 │   ├── integration/          # API endpoint and file tailer tests
