@@ -12,11 +12,14 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from agent.collectors.file_tailer import FileTailer
 from agent.config import Settings, get_settings
 from agent.event_bus import EventBus
+from agent.parsers import parser_for_path
 from api.middleware.auth import JWTAuthMiddleware
 from api.middleware.ratelimit import RateLimitMiddleware
 from api.models.database import DatabaseManager
+from api.models.persistence import EventPersister
 from api.routes import alerts, anomalies, events, stats, websocket
 from ml.pipeline import DetectionPipeline
 
@@ -46,11 +49,31 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     pipeline_task = asyncio.create_task(pipeline.start())
     app.state.pipeline = pipeline
 
+    # Persist every bus event to SQLite so tailed logs reach the API/dashboard
+    persister = EventPersister(app.state.event_bus, db)
+    persister_task = asyncio.create_task(persister.start())
+    app.state.persister = persister
+
+    # Tail configured log files, routing each to its parser by filename.
+    # Missing files are skipped, so the default source list is safe anywhere.
+    tailer = FileTailer(app.state.event_bus)
+    for source in settings.log_sources:
+        tailer.add_source(source, parser_for_path(source))
+    tailer_task = asyncio.create_task(tailer.start())
+    app.state.tailer = tailer
+
     if settings.demo_mode:
-        from scripts.generate_demo_data import seed_database
+        from scripts.generate_demo_data import generate_live_events, seed_database
 
         seed_database(db)
-        logger.info("Demo data seeded")
+        # Replay a live attack burst through the bus so the detectors fire
+        # real alerts. Wait for the consumers to subscribe first — events
+        # published before subscription would vanish.
+        await asyncio.wait_for(pipeline.ready.wait(), timeout=5.0)
+        await asyncio.wait_for(persister.ready.wait(), timeout=5.0)
+        for event in generate_live_events():
+            await app.state.event_bus.publish(event)
+        logger.info("Demo data seeded and live events replayed through the bus")
 
     logger.info(
         "ThreatScope started on %s:%d (demo=%s)",
@@ -59,8 +82,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings.demo_mode,
     )
     yield
+    await tailer.stop()
     await pipeline.stop()
-    pipeline_task.cancel()
+    await persister.stop()
+    for task in (tailer_task, pipeline_task, persister_task):
+        task.cancel()
     logger.info("ThreatScope shutting down")
 
 
@@ -129,6 +155,7 @@ def main() -> None:
         jwt_secret=settings.jwt_secret,
         cors_origins=settings.cors_origins,
         rate_limit_per_minute=settings.rate_limit_per_minute,
+        log_sources=settings.log_sources,
         narration_api_key=settings.narration_api_key,
     )
 

@@ -10,6 +10,21 @@ __all__ = ["Settings", "get_settings"]
 
 _BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Default log files to tail. Missing files are skipped at startup, so it is
+# safe to list sources that only exist on some hosts.
+_DEFAULT_LOG_SOURCES = (
+    "/var/log/auth.log",
+    "/var/log/syslog",
+    "/var/log/dnsmasq.log",
+)
+
+
+def _log_sources_from_env() -> list[Path]:
+    raw = os.getenv("THREATSCOPE_LOG_SOURCES", "")
+    if raw.strip():
+        return [Path(part.strip()) for part in raw.split(",") if part.strip()]
+    return [Path(p) for p in _DEFAULT_LOG_SOURCES]
+
 
 @dataclass(frozen=True, slots=True)
 class Settings:
@@ -37,10 +52,9 @@ class Settings:
     rate_limit_per_minute: int = 60
 
     # Log collection
-    log_sources: list[Path] = field(default_factory=lambda: [
-        Path("/var/log/auth.log"),
-        Path("/var/log/syslog"),
-    ])
+    log_sources: list[Path] = field(
+        default_factory=lambda: [Path(p) for p in _DEFAULT_LOG_SOURCES]
+    )
 
     # ML
     anomaly_threshold: float = 0.7
@@ -62,5 +76,6 @@ def get_settings() -> Settings:
         jwt_secret=os.getenv("THREATSCOPE_JWT_SECRET", ""),
         cors_origins=os.getenv("THREATSCOPE_CORS_ORIGINS", "http://localhost:5173").split(","),
         rate_limit_per_minute=int(os.getenv("THREATSCOPE_RATE_LIMIT", "60")),
+        log_sources=_log_sources_from_env(),
         narration_api_key=os.getenv("THREATSCOPE_NARRATION_KEY", ""),
     )

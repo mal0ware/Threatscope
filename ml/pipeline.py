@@ -55,16 +55,27 @@ class DetectionPipeline:
         self._rule_engine = RuleEngine()
 
         self._running = False
+        self._ready = asyncio.Event()
         self._events_processed = 0
 
     @property
     def events_processed(self) -> int:
         return self._events_processed
 
+    @property
+    def ready(self) -> asyncio.Event:
+        """Set once the pipeline has subscribed to the bus.
+
+        Publishers that must not race the subscription (e.g. the demo
+        replay at startup) can await this before publishing.
+        """
+        return self._ready
+
     async def start(self) -> None:
         """Subscribe to event bus and process events until stopped."""
         queue = await self._event_bus.subscribe("ml-pipeline")
         self._running = True
+        self._ready.set()
         logger.info("Detection pipeline started")
 
         try:
