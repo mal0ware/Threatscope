@@ -57,3 +57,9 @@ detection, and dashboard, verified end to end in demo mode.
   databases created before the fix; malformed MATCH expressions now
   return `400` instead of an unhandled `500`.
 - Broke the `ml`/`api` circular import so `tests/unit` collects standalone.
+
+### Known limitations
+- No prebuilt desktop binaries: the Tauri bundle declares the Python API
+  as a sidecar (`externalBin`) but no pipeline step packages it yet, so
+  the tag-triggered desktop builds fail at the bundling stage. v0.1.0 is
+  a source release; run from source via `make dev` / `make demo`.

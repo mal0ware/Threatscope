@@ -396,22 +396,18 @@ threatscope/
 
 ## Desktop App
 
-ThreatScope ships as a native desktop application via [Tauri 2.x](https://v2.tauri.app/):
+ThreatScope includes a [Tauri 2.x](https://v2.tauri.app/) desktop shell:
 
 - System tray with quick-access menu (Show Dashboard / Quit)
 - Native notification support for critical alerts
 - ~10MB binary footprint (Rust + system WebView, no bundled Chromium)
-- Cross-platform builds for macOS, Windows, and Linux via GitHub Actions
 
-To build locally:
-
-```bash
-cd frontend
-npm ci
-npx tauri build
-```
-
-Requires Rust toolchain and platform-specific dependencies ([Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)).
+**Status:** prebuilt desktop binaries are not published yet. The bundle
+config declares the Python API as a sidecar binary (`externalBin`), but the
+packaging step that would produce it (PyInstaller per platform) is not wired
+into the release pipeline, so `npx tauri build` currently fails at the
+bundling stage. Until that lands, run the stack from source (`make dev` /
+`make demo`) — it is the fully supported path.
 
 ---
 
@@ -424,8 +420,9 @@ Requires Rust toolchain and platform-specific dependencies ([Tauri prerequisites
 
 **Release** pipeline triggers on version tags (`v*`):
 
-- Builds native desktop binaries for Linux, macOS, and Windows
-- Creates a GitHub Draft Release with all platform artifacts
+- Attempts native desktop builds for Linux, macOS, and Windows
+- Currently blocked on the API sidecar packaging step (see
+  [Desktop App](#desktop-app)) — v0.1.0 is a source release
 
 ---
 
