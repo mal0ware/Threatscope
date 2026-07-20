@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 from collections.abc import AsyncIterator
 from datetime import datetime
 
@@ -94,17 +95,30 @@ async def search_events(
     sort_col = {"timestamp": "e.timestamp", "severity": "e.severity", "source": "e.source"}[sort]
     direction = "DESC" if order == "desc" else "ASC"
 
-    with db.connect() as conn:
-        count_row = conn.execute(
-            f"SELECT COUNT(*) FROM events e {where}", params  # noqa: S608
-        ).fetchone()
-        total = count_row[0] if count_row else 0
+    try:
+        with db.connect() as conn:
+            count_row = conn.execute(
+                f"SELECT COUNT(*) FROM events e {where}", params  # noqa: S608
+            ).fetchone()
+            total = count_row[0] if count_row else 0
 
-        rows = conn.execute(
-            f"SELECT e.* FROM events e {where} "  # noqa: S608
-            f"ORDER BY {sort_col} {direction} LIMIT ? OFFSET ?",
-            [*params, limit, offset],
-        ).fetchall()
+            rows = conn.execute(
+                f"SELECT e.* FROM events e {where} "  # noqa: S608
+                f"ORDER BY {sort_col} {direction} LIMIT ? OFFSET ?",
+                [*params, limit, offset],
+            ).fetchall()
+    except sqlite3.OperationalError:
+        # fts5 rejects malformed MATCH expressions at execution time, with
+        # messages that vary by malformation ("fts5: syntax error near ...",
+        # "unterminated string", ...). The MATCH parameter is the only
+        # user-controlled input that can fail here — every other filter is
+        # allowlist-validated above — so when q is set this is caller input,
+        # not a server fault: surface a 400, not a 500.
+        if q:
+            raise HTTPException(  # noqa: B904
+                status_code=400, detail="Invalid full-text search query"
+            )
+        raise
 
     events = [dict(row) for row in rows]
 

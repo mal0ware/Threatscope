@@ -39,6 +39,21 @@ CREATE VIRTUAL TABLE IF NOT EXISTS events_fts USING fts5(
     content_rowid=id
 );
 
+-- fts5 external-content tables are NOT populated automatically: without
+-- these triggers the index stays empty and every MATCH returns nothing.
+CREATE TRIGGER IF NOT EXISTS events_fts_ai AFTER INSERT ON events BEGIN
+    INSERT INTO events_fts(rowid, raw_message) VALUES (new.id, new.raw_message);
+END;
+CREATE TRIGGER IF NOT EXISTS events_fts_ad AFTER DELETE ON events BEGIN
+    INSERT INTO events_fts(events_fts, rowid, raw_message)
+    VALUES ('delete', old.id, old.raw_message);
+END;
+CREATE TRIGGER IF NOT EXISTS events_fts_au AFTER UPDATE ON events BEGIN
+    INSERT INTO events_fts(events_fts, rowid, raw_message)
+    VALUES ('delete', old.id, old.raw_message);
+    INSERT INTO events_fts(rowid, raw_message) VALUES (new.id, new.raw_message);
+END;
+
 CREATE TABLE IF NOT EXISTS alerts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     event_cluster TEXT NOT NULL,
@@ -78,7 +93,34 @@ class DatabaseManager:
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as conn:
             conn.executescript(_SCHEMA)
+            self._sync_fts_index(conn)
         logger.info("Database initialized at %s", self._db_path)
+
+    @staticmethod
+    def _sync_fts_index(conn: sqlite3.Connection) -> None:
+        """Rebuild the FTS index if it has drifted from the events table.
+
+        Databases created before the fts sync triggers existed have rows in
+        ``events`` that were never indexed. A rebuild is O(events), so only
+        do it when the row counts disagree.
+
+        Note: ``COUNT(*)`` on an external-content fts5 table is answered
+        from the *content* table, so it always agrees with ``events`` even
+        when the index is empty. The ``events_fts_docsize`` shadow table
+        holds one row per actually-indexed document, which is the signal
+        we need.
+        """
+        row = conn.execute(
+            "SELECT (SELECT COUNT(*) FROM events) AS events_count, "
+            "(SELECT COUNT(*) FROM events_fts_docsize) AS fts_count"
+        ).fetchone()
+        if row["events_count"] != row["fts_count"]:
+            logger.info(
+                "FTS index out of sync (%d events vs %d indexed), rebuilding",
+                row["events_count"],
+                row["fts_count"],
+            )
+            conn.execute("INSERT INTO events_fts(events_fts) VALUES ('rebuild')")
 
     @contextmanager
     def connect(self) -> Generator[sqlite3.Connection, None, None]:

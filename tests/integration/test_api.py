@@ -84,6 +84,57 @@ async def test_search_with_seeded_data(client, app):
 
 
 @pytest.mark.asyncio
+async def test_search_full_text_finds_seeded_event(client, app):
+    """The fts5 index must stay in sync with events via triggers."""
+    db = app.state.db
+    with db.connect() as conn:
+        conn.execute(
+            "INSERT INTO events (timestamp, source, event_type, severity, "
+            "source_ip, raw_message, metadata) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                "2026-04-09T12:00:00",
+                "dns",
+                "dns_query",
+                "info",
+                "10.0.0.7",
+                "query[TXT] deadbeef.tunnel.evil.com from 10.0.0.7",
+                json.dumps({"domain": "deadbeef.tunnel.evil.com"}),
+            ),
+        )
+
+    resp = await client.get("/api/v1/events/search", params={"q": "tunnel"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 1
+    assert data["events"][0]["source"] == "dns"
+
+
+@pytest.mark.asyncio
+async def test_search_full_text_no_match(client, app):
+    db = app.state.db
+    with db.connect() as conn:
+        conn.execute(
+            "INSERT INTO events (timestamp, source, event_type, severity, "
+            "raw_message, metadata) VALUES (?, ?, ?, ?, ?, ?)",
+            ("2026-04-09T12:00:00", "auth", "ssh_failed", "medium",
+             "Failed password for admin", json.dumps({})),
+        )
+
+    resp = await client.get("/api/v1/events/search", params={"q": "nonexistentterm"})
+    assert resp.status_code == 200
+    assert resp.json()["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_search_malformed_fts_query_returns_400(client):
+    """fts5 syntax errors are caller input errors, not 500s."""
+    resp = await client.get("/api/v1/events/search", params={"q": '"unbalanced'})
+    assert resp.status_code == 400
+    assert "search query" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_search_invalid_severity(client):
     resp = await client.get("/api/v1/events/search", params={"severity": "extreme"})
     assert resp.status_code == 400
